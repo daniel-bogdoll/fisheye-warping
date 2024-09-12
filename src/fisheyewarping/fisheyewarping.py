@@ -1,6 +1,7 @@
 """
 Fisheye Rewarp And Dewarp
 """
+
 import pickle
 import cv2
 import numpy as np
@@ -8,34 +9,38 @@ from tqdm import tqdm
 import multiprocessing as mp
 import time
 
+
 def unit_vector(vector):
-    """ Returns the unit vector of the vector.  """
-    np.seterr(invalid='ignore')
+    """Returns the unit vector of the vector."""
+    np.seterr(invalid="ignore")
     norm = np.linalg.norm(vector)
     return vector / norm
 
+
 def angle_between(v1, v2):
-    """ Returns the angle in radians between vectors 'v1' and 'v2'::
-            >>> angle_between((1, 0, 0), (0, 1, 0))
-            1.5707963267948966
-            >>> angle_between((1, 0, 0), (1, 0, 0))
-            0.0
-            >>> angle_between((1, 0, 0), (-1, 0, 0))
-            3.141592653589793
+    """Returns the angle in radians between vectors 'v1' and 'v2'::
+    >>> angle_between((1, 0, 0), (0, 1, 0))
+    1.5707963267948966
+    >>> angle_between((1, 0, 0), (1, 0, 0))
+    0.0
+    >>> angle_between((1, 0, 0), (-1, 0, 0))
+    3.141592653589793
     """
     v1_u = unit_vector(v1)
     v2_u = unit_vector(v2)
     return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
+
 def angle_map(points):
     point, center, top_point, radius = points
     point_np = np.asarray(point)
-    distance = np.linalg.norm(point_np-center)
+    distance = np.linalg.norm(point_np - center)
     length_percentage = None
     if distance <= radius:
-        angle = angle_between(top_point-center, point_np-center)
+        angle = angle_between(top_point - center, point_np - center)
         length_percentage = angle / (2 * np.pi)
     return point, length_percentage, distance
+
 
 class FisheyeWarping:
 
@@ -50,52 +55,67 @@ class FisheyeWarping:
 
     def build_dewarp_mesh(self, save_path=None):
         if self.use_multiprocessing:
-            self.__dewarp_map_x, self.__dewarp_map_y = self.__build_dewarp_map_with_mp(self.img)
+            self.__dewarp_map_x, self.__dewarp_map_y = self.__build_dewarp_map_with_mp(
+                self.img
+            )
         else:
             self.__dewarp_map_x, self.__dewarp_map_y = self.__build_dewarp_map(self.img)
-        if save_path and isinstance(save_path, str):
-            with open(save_path, 'wb') as f:
-                pickle.dump((self.__dewarp_map_x, self.__dewarp_map_y), f)
-        print(f'Dewarp Map X shape -> {self.__dewarp_map_x.shape}')
-        print(f'Dewarp Map Y shape -> {self.__dewarp_map_y.shape}')
+        print(f"Dewarp Map X shape -> {self.__dewarp_map_x.shape}")
+        print(f"Dewarp Map Y shape -> {self.__dewarp_map_y.shape}")
         h, w = self.__dewarp_map_x.shape
         self.__panorama_shape = (w, h)
-        return  self.__panorama_shape, self.__dewarp_map_x, self.__dewarp_map_y
+        if save_path and isinstance(save_path, str):
+            with open(save_path, "wb") as f:
+                pickle.dump(
+                    (self.__panorama_shape, self.__dewarp_map_x, self.__dewarp_map_y), f
+                )
+        return self.__panorama_shape, self.__dewarp_map_x, self.__dewarp_map_y
 
-    def load_dewarp_mesh(self, mesh_path:str):
-        with open(mesh_path, 'rb') as f:
-             self.__panorama_shape, self.__dewarp_map_x, self.__dewarp_map_y = pickle.load(f)
+    def load_dewarp_mesh(self, mesh_path: str):
+        with open(mesh_path, "rb") as f:
+            # print(pickle.load(f))
+            self.__panorama_shape, self.__dewarp_map_x, self.__dewarp_map_y = (
+                pickle.load(f)
+            )
         return self.__panorama_shape, self.__dewarp_map_x, self.__dewarp_map_y
 
     def run_dewarp(self, save_path=None):
         result = self.dewarp(self.img, flip=True)
-        print(f'Panorama shape is `{result.shape}`')
+        print(f"Panorama shape is `{result.shape}`")
         if save_path and isinstance(save_path, str):
             cv2.imwrite(save_path, result)
         return result
 
     def build_rewarp_mesh(self, save_path=None):
         if self.use_multiprocessing:
-            self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask = self.__build_rewarp_map_with_mp()
+            self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask = (
+                self.__build_rewarp_map_with_mp()
+            )
         else:
-            self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask = self.__build_rewarp_map()
+            self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask = (
+                self.__build_rewarp_map()
+            )
         if save_path and isinstance(save_path, str):
-            with open(save_path, 'wb') as f:
-                pickle.dump((self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask), f)
-        print(f'Rewarp Map X shape -> {self.__rewarp_map_x.shape}')
-        print(f'Rewarp Map Y shape -> {self.__rewarp_map_y.shape}')
-        print(f'Rewarp Map MASK shape -> {self.__rewarp_mask.shape}')
+            with open(save_path, "wb") as f:
+                pickle.dump(
+                    (self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask), f
+                )
+        print(f"Rewarp Map X shape -> {self.__rewarp_map_x.shape}")
+        print(f"Rewarp Map Y shape -> {self.__rewarp_map_y.shape}")
+        print(f"Rewarp Map MASK shape -> {self.__rewarp_mask.shape}")
         return self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask
 
-    def load_rewarp_mesh(self, mesh_path:str):
-        with open(mesh_path, 'rb') as f:
-            self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask = pickle.load(f)
+    def load_rewarp_mesh(self, mesh_path: str):
+        with open(mesh_path, "rb") as f:
+            self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask = pickle.load(
+                f
+            )
         return self.__rewarp_map_x, self.__rewarp_map_y, self.__rewarp_mask
 
     def run_rewarp(self, save_path=None):
         dewarp_result = self.dewarp(self.img, flip=False)
         result = self.rewarp(dewarp_result, flip=True)
-        print(f'Fisheye image shape is `{result.shape}`')
+        print(f"Fisheye image shape is `{result.shape}`")
         if save_path and isinstance(save_path, str):
             cv2.imwrite(save_path, result)
         return result
@@ -105,30 +125,27 @@ class FisheyeWarping:
         assert self.__panorama_shape != None, warning_msg
         panorama_img = cv2.resize(panorama_img, self.__panorama_shape)
         panorama_img = self.__wrap(panorama_img, rotate_angle=180, scale=1)
-        result = self.rewarp(
-            panorama_img,
-            flip=True
-        )
-        print(f'Fisheye image shape is `{result.shape}`')
+        result = self.rewarp(panorama_img, flip=True)
+        print(f"Fisheye image shape is `{result.shape}`")
         if save_path and isinstance(save_path, str):
             cv2.imwrite(save_path, result)
         return result
 
     def __get_fisheye_img_data(self, img):
         # Center
-        c_x = int(img.shape[1]/2)
-        c_y = int(img.shape[0]/2)
+        c_x = int(img.shape[1] / 2)
+        c_y = int(img.shape[0] / 2)
         # Inner circle, now is zero
-        r1_x = int(img.shape[1]/2)
-        #r1_y = int(img.shape[0]/2)
+        r1_x = int(img.shape[1] / 2)
+        # r1_y = int(img.shape[0]/2)
         r1 = r1_x - c_x
         # Outter circle
         r2_x = int(img.shape[1])
-        #r2_y = 0
+        # r2_y = 0
         r2 = r2_x - c_x
         # Rectangle width and height
-        w_d = int(2.0 * (( r2 + r1 ) / 2) * np.pi)
-        h_d = (r2 - r1)
+        w_d = int(2.0 * ((r2 + r1) / 2) * np.pi)
+        h_d = r2 - r1
         return w_d, h_d, r1, r2, c_x, c_y
 
     def _dewarp_map_job(self, point):
@@ -145,8 +162,8 @@ class FisheyeWarping:
         w_d, h_d, _, _, _, _ = img_details
         mapx = np.zeros((h_d, w_d), np.float32)
         mapy = np.zeros((h_d, w_d), np.float32)
-        for y in tqdm(range(0, int(h_d-1)), desc='Run dewarp job...'):
-            for x in range(0, int(w_d-1)):
+        for y in tqdm(range(0, int(h_d - 1)), desc="Run dewarp job..."):
+            for x in range(0, int(w_d - 1)):
                 _, x_s, y_s = self._dewarp_map_job((y, x, img_details))
                 mapx.itemset((y, x), x_s)
                 mapy.itemset((y, x), y_s)
@@ -159,58 +176,93 @@ class FisheyeWarping:
         mapy = np.zeros((h_d, w_d), np.float32)
 
         jobList = list()
-        for y in tqdm(range(0, int(h_d-1)), desc='Getting (x, y) for rectangle...'):
-            for x in range(0, int(w_d-1)):
+        for y in tqdm(range(0, int(h_d - 1)), desc="Getting (x, y) for rectangle..."):
+            for x in range(0, int(w_d - 1)):
                 jobList.append((y, x, img_details))
         st = time.time()
-        print('-------Start multi pixel mapping for dewarpping-------')
+        print("-------Start multi pixel mapping for dewarpping-------")
         with mp.Pool() as p:
             results = p.map(self._dewarp_map_job, jobList)
-        print('--------Mapping Completed-------- ({:0.3f} s)'.format(time.time() - st))
-        for result in tqdm(results, desc='Mapping values to rectangle...'):
+        print("--------Mapping Completed-------- ({:0.3f} s)".format(time.time() - st))
+        for result in tqdm(results, desc="Mapping values to rectangle..."):
             point, x_s, y_s = result
-            mapx.itemset(point, x_s)
-            mapy.itemset(point, y_s)
-        
+            mapx[point] = x_s
+            mapy[point] = y_s
+
         return mapx, mapy
 
     def dewarp(self, img, flip=False):
-        warning_msg = "Dewarp mesh have not been created! Please run `build_dewarp_mesh` first."
+        warning_msg = (
+            "Dewarp mesh have not been created! Please run `build_dewarp_mesh` first."
+        )
         assert self.__dewarp_map_x is not None, warning_msg
         assert self.__dewarp_map_y is not None, warning_msg
         output = cv2.remap(
-            img,
-            self.__dewarp_map_x,
-            self.__dewarp_map_y,
-            cv2.INTER_LINEAR
+            img, self.__dewarp_map_x, self.__dewarp_map_y, cv2.INTER_LINEAR
         )
         if flip:
             output = self.__wrap(output, 180, scale=1)
         return output
 
-    def __wrap(self, img, rotate_angle, scale=1/3):
+    def dewarp_coordinates(self, x_s, y_s):
+        """
+        Get the corresponding pixel in the panorama image for a given pixel in the fisheye source image.
+
+        :param x_s: x-coordinate in the fisheye source image
+        :param y_s: y-coordinate in the fisheye source image
+        :return: (x_p, y_p) coordinates in the panorama image
+        """
+        assert self.__dewarp_map_x is not None, "Dewarp map x has not been created!"
+        assert self.__dewarp_map_y is not None, "Dewarp map y has not been created!"
+
+        # Extract dewarp maps
+        dewarp_map_x = self.__dewarp_map_x
+        dewarp_map_y = self.__dewarp_map_y
+
+        # Find the closest point in the dewarp map that matches the source coordinates
+        # The dewarp map contains the source coordinates (x_s, y_s) at each point in the panoramic image space (x_p, y_p)
+
+        # Calculate the absolute differences between the dewarp maps and the source coordinates
+        diff_x = np.abs(dewarp_map_x - x_s)
+        diff_y = np.abs(dewarp_map_y - y_s)
+
+        # Compute the Euclidean distance for all pixels in the map to find the closest source point
+        distance = np.sqrt(diff_x**2 + diff_y**2)
+
+        # Find the index of the minimum distance, which corresponds to the pixel in the panorama
+        index = np.unravel_index(np.argmin(distance, axis=None), distance.shape)
+
+        # The corresponding pixel in the panoramic image
+        y_p, x_p = index  # OpenCV uses (row, col) format, hence (y_p, x_p)
+
+        # Correct for the 180-degree rotation
+        pano_height, pano_width = dewarp_map_x.shape
+        x_p = pano_width - 1 - x_p
+        y_p = pano_height - 1 - y_p
+
+        return x_p, y_p
+
+    def __wrap(self, img, rotate_angle, scale=1 / 3):
         h, w = img.shape[:2]
         # get the center
         center = (w / 2, h / 2)
         r_matrix = cv2.getRotationMatrix2D(center, rotate_angle, 1)
         img = cv2.warpAffine(img, r_matrix, (w, h))
         img = cv2.resize(
-            img,
-            dsize=(int(w * scale), int(h * scale)),
-            interpolation=cv2.INTER_AREA
+            img, dsize=(int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA
         )
         return img
 
     def __build_rewarp_map(self):
-        width, height, _  = self.img.shape
+        width, height, _ = self.img.shape
         xmap = np.zeros((width, height), dtype=np.float32)
         ymap = np.zeros((width, height), dtype=np.float32)
         mask = np.zeros((width, height), dtype=np.uint8)
-        center = np.asarray([int(width/2), int(height/2)])
-        top_point = np.asarray([int(width/2), 0])
-        radius = width/2
+        center = np.asarray([int(width / 2), int(height / 2)])
+        top_point = np.asarray([int(width / 2), 0])
+        radius = width / 2
         results = list()
-        for y, channel in enumerate(tqdm(self.img, desc='Run rewarp job...')):
+        for y, channel in enumerate(tqdm(self.img, desc="Run rewarp job...")):
             for x, _ in enumerate(channel):
                 points = ((x, y), center, top_point, radius)
                 results.append(angle_map(points))
@@ -224,36 +276,38 @@ class FisheyeWarping:
                 xmap.itemset(point, length)
                 ymap.itemset(point, distance)
                 mask.itemset(point, 255)
-        
+
         return xmap, ymap, mask
 
     def __build_rewarp_map_with_mp(self):
-        width, height, _  = self.img.shape
+        width, height, _ = self.img.shape
         xmap = np.zeros((width, height), dtype=np.float32)
         ymap = np.zeros((width, height), dtype=np.float32)
         mask = np.zeros((width, height), dtype=np.uint8)
-        center = np.asarray([int(width/2), int(height/2)])
-        top_point = np.asarray([int(width/2), 0])
+        center = np.asarray([int(width / 2), int(height / 2)])
+        top_point = np.asarray([int(width / 2), 0])
         radius = width / 2
         jobs = list()
-        for y, channel in enumerate(tqdm(self.img, desc='Getting (x, y) for circle...')):
+        for y, channel in enumerate(
+            tqdm(self.img, desc="Getting (x, y) for circle...")
+        ):
             for x, _ in enumerate(channel):
                 points = ((x, y), center, top_point, radius)
                 jobs.append(points)
         s = time.time()
-        print('-------Start multi pixel mapping for rewarpping-------')
+        print("-------Start multi pixel mapping for rewarpping-------")
         with mp.Pool() as p:
             results = p.map(angle_map, jobs)
-        print('--------Mapping Completed-------- ({:0.3f} s)'.format(time.time()-s))
+        print("--------Mapping Completed-------- ({:0.3f} s)".format(time.time() - s))
         dewarp_result = self.dewarp(self.img, flip=False)
-        for result in tqdm(results, desc='Mapping values to circle...'):
+        for result in tqdm(results, desc="Mapping values to circle..."):
             (x, y), length_percentage, distance = result
             if length_percentage is not None:
                 point = (y, x)
                 length = length_percentage * dewarp_result.shape[1]
-                xmap.itemset(point, length)
-                ymap.itemset(point, distance)
-                mask.itemset(point, 255)
+                xmap[point] = length
+                ymap[point] = distance
+                mask[point] = 255
 
         return xmap, ymap, mask
 
@@ -270,14 +324,14 @@ class FisheyeWarping:
         return left_output, right_output
 
     def rewarp(self, panorama_img, flip=False):
-        warning_msg = "Rewarp mesh have not been created! Please run `build_rewarp_mesh` first."
+        warning_msg = (
+            "Rewarp mesh have not been created! Please run `build_rewarp_mesh` first."
+        )
         assert self.__rewarp_map_x is not None, warning_msg
         assert self.__rewarp_map_y is not None, warning_msg
         assert self.__rewarp_mask is not None, warning_msg
         left_output, right_output = self.half_rewarp_map(
-            panorama_img,
-            self.__rewarp_map_x,
-            self.__rewarp_map_y
+            panorama_img, self.__rewarp_map_x, self.__rewarp_map_y
         )
 
         re_render_canvas = left_output
@@ -289,7 +343,7 @@ class FisheyeWarping:
         re_render_canvas = cv2.add(
             re_render_canvas,
             np.zeros(re_render_canvas.shape, dtype=np.uint8),
-            mask=self.__rewarp_mask
+            mask=self.__rewarp_mask,
         )
 
         if flip:
